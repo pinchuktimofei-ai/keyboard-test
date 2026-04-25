@@ -5,36 +5,24 @@
 <title>Тест клавиатуры — современный дизайн</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Google Font -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
 <style>
-:root {
-    --color-bg: #f7f9fc;
-    --color-fg: #2b2b2b;
-    --color-card-bg: #ffffff;
-    --color-card-shadow: rgba(0,0,0,.08);
-    --color-key: #0066ff;
-    --color-mod-bg: #e6f2ff;
-    --color-mod-fg: #0066ff;
-    --color-accent: #0066ff;
-    --transition: 0.25s ease;
+:root{
+    --color-bg:#f7f9fc;--color-fg:#2b2b2b;--color-card-bg:#fff;
+    --color-card-shadow:rgba(0,0,0,.08);--color-key:#0066ff;
+    --color-mod-bg:#e6f2ff;--color-mod-fg:#0066ff;--color-accent:#0066ff;
+    --transition:.25s ease;
 }
-.dark {
-    --color-bg: #1e1e2f;
-    --color-fg: #e0e0e8;
-    --color-card-bg: #282a36;
-    --color-card-shadow: rgba(0,0,0,.4);
-    --color-key: #ff79c6;
-    --color-mod-bg: #44475a;
-    --color-mod-fg: #ff79c6;
-    --color-accent: #ff79c6;
+.dark{
+    --color-bg:#1e1e2f;--color-fg:#e0e0e8;--color-card-bg:#282a36;
+    --color-card-shadow:rgba(0,0,0,.4);--color-key:#ff79c6;
+    --color-mod-bg:#44475a;--color-mod-fg:#ff79c6;--color-accent:#ff79c6;
 }
 html,body{
     height:100%;margin:0;font-family:'Inter',sans-serif;
     background:var(--color-bg);color:var(--color-fg);
-    display:flex;align-items:center;justify-content:center;
-    overflow:hidden;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
 }
 #card{
     background:var(--color-card-bg);border-radius:12px;
@@ -59,6 +47,7 @@ h1{margin:0 0 .8rem;font-weight:600;font-size:1.6rem;color:var(--color-fg);}
 }
 @keyframes pulse{from{transform:scale(1);}to{transform:scale(1.07);}}
 #hint{margin-top:1.4rem;font-size:.85rem;color:var(--color-fg);opacity:.7;}
+#secret{margin-top:1rem;font-size:1rem;color:var(--color-accent);opacity:0;transition:opacity .3s;}
 @media (max-width:420px){
     .key{font-size:2.4rem;}
     #card{padding:1.5rem 1.8rem;}
@@ -76,6 +65,8 @@ h1{margin:0 0 .8rem;font-weight:600;font-size:1.6rem;color:var(--color-fg);}
     <div class="code"></div>
     <div class="mods"></div>
 
+    <div id="secret">🤫 Секрет раскрыт!</div>
+
     <div id="hint">Пробел, Enter, стрелки… проверяйте любые клавиши!</div>
 </div>
 
@@ -87,11 +78,41 @@ toggleBtn.addEventListener('click', () => {
     toggleBtn.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
 });
 
-/* ---------- Вывод информации о клавише ---------- */
+/* ---------- UI‑элементы ---------- */
 const keyDiv   = document.querySelector('.key');
 const codeDiv  = document.querySelector('.code');
 const modsDiv  = document.querySelector('.mods');
+const secretEl = document.getElementById('secret');
 
+/* ---------- Аудио‑движок ---------- */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+/* Короткий «бип‑бип» – используется как «секретный» звук */
+function playSecretBeep() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.value = 660;                 // чуть выше обычного тона
+
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.16);
+}
+
+/* Произнести «sixseven» голосом браузера */
+function speakSixSeven() {
+    const utter = new SpeechSynthesisUtterance('sixseven');
+    utter.rate = 0.9;          // чуть медленнее обычного
+    utter.pitch = 1.2;
+    speechSynthesis.speak(utter);
+}
+
+/* ---------- Информация о клавише ---------- */
 function updateInfo(e) {
     const name = (e.key.length === 1) ? e.key.toUpperCase() : e.key;
     keyDiv.textContent = `Клавиша: ${name}`;
@@ -103,40 +124,35 @@ function updateInfo(e) {
     if (e.altKey)   mods.push('Alt');
     if (e.metaKey)  mods.push('Meta');
 
-    if (mods.length) {
-        modsDiv.innerHTML = `<strong>Модификаторы:</strong> ` +
-            mods.map(m => `<span>${m}</span>`).join('');
-    } else {
-        modsDiv.innerHTML = `<strong>Модификаторы:</strong> нет`;
-    }
+    modsDiv.innerHTML = `<strong>Модификаторы:</strong> ` +
+        (mods.length ? mods.map(m => `<span>${m}</span>`).join('') : 'нет');
 }
 
-/* ---------- Звук при нажатии ---------- */
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+/* ---------- Последовательность «6 → 7» ---------- */
+let lastKey = null;               // хранит последнюю нажатую клавишу
 
-function playClick() {
-    // Создаём короткий «щелчок» – синусоидальный осциллятор 440 Гц, 50 мс
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+function checkSecretSequence(key) {
+    if (lastKey === '6' && key === '7') {
+        // Секрет выполнен!
+        playSecretBeep();          // звук‑эффект
+        speakSixSeven();           // голосовое «sixseven»
 
-    osc.type = 'square';          // более «твердый» звук, чем sine
-    osc.frequency.value = 440;   // нота A4
-
-    // Параметры огибающей: быстро поднимаем громкость, потом быстро спадаем
-    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.005); // атака
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05); // спуск
-
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.06); // чуть дольше, чем длительность огибающей
+        // визуальный отклик
+        secretEl.style.opacity = 1;
+        setTimeout(() => secretEl.style.opacity = 0, 1800);
+        // сбрасываем, чтобы можно было активировать снова
+        lastKey = null;
+    } else {
+        // просто запоминаем текущую клавишу
+        lastKey = key;
+    }
 }
 
 /* ---------- Обработчик клавиатуры ---------- */
 window.addEventListener('keydown', e => {
-    e.preventDefault();          // отключаем скролл и прочие действия
+    e.preventDefault();               // отключаем стандартные действия (прокрутка и т.п.)
     updateInfo(e);
-    playClick();                 // звук сразу после обновления UI
+    checkSecretSequence(e.key);
 });
 </script>
 </body>
